@@ -2,7 +2,7 @@ defmodule Boruta.Ecto.Codes do
   @moduledoc false
   @behaviour Boruta.Oauth.Codes
 
-  import Boruta.Config, only: [repo: 0]
+  import Boruta.Config, only: [repo: 0, token_persistence: 0]
   import Ecto.Query
   import Boruta.Ecto.OauthMapper, only: [to_oauth_schema: 1]
 
@@ -18,6 +18,8 @@ defmodule Boruta.Ecto.Codes do
       token
     else
       {:error, "Not cached."} ->
+        value = dump_token_value(value, :code)
+
         with %Token{} = token <-
                repo().one(
                  from t in Token,
@@ -27,6 +29,7 @@ defmodule Boruta.Ecto.Codes do
                ),
              {:ok, token} <-
                token
+               |> load_token()
                |> to_oauth_schema()
                |> TokenStore.put() do
           token
@@ -51,6 +54,7 @@ defmodule Boruta.Ecto.Codes do
                ),
              {:ok, token} <-
                token
+               |> load_token()
                |> to_oauth_schema()
                |> TokenStore.put() do
           token
@@ -64,6 +68,8 @@ defmodule Boruta.Ecto.Codes do
         token
 
       {:error, "Not cached."} ->
+        value = dump_token_value(value, :code)
+
         with %Token{} = token <-
                repo().one(
                  from t in Token,
@@ -71,6 +77,7 @@ defmodule Boruta.Ecto.Codes do
                ),
              {:ok, token} <-
                token
+               |> load_token()
                |> to_oauth_schema()
                |> TokenStore.put() do
           token
@@ -116,7 +123,7 @@ defmodule Boruta.Ecto.Codes do
       ])
 
     with {:ok, token} <- repo().insert(changeset),
-         {:ok, token} <- TokenStore.put(to_oauth_schema(token)) do
+         {:ok, token} <- TokenStore.put(to_oauth_schema(load_token(token))) do
       {:ok, token}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -131,6 +138,8 @@ defmodule Boruta.Ecto.Codes do
 
   @impl Boruta.Oauth.Codes
   def revoke(%Oauth.Token{value: value} = code) do
+    value = dump_token_value(value, :code)
+
     with %Token{} = token <- repo().get_by(Token, value: value),
          {:ok, token} <-
            Token.revoke_changeset(token)
@@ -148,11 +157,29 @@ defmodule Boruta.Ecto.Codes do
 
   @impl Boruta.Oauth.Codes
   def revoke_previous_token(%Oauth.Token{value: value} = code) do
+    value = dump_token_value(value, :code)
+
     with %Token{} = previous_token <- repo().get_by(Token, previous_code: value),
          {:ok, _token} <-
            Token.revoke_changeset(previous_token)
            |> repo().update() do
       {:ok, code}
+    end
+  end
+
+  defp dump_token_value(value, type) when is_binary(value) do
+    if persistence = token_persistence() do
+      persistence.dump(value, type)
+    else
+      value
+    end
+  end
+
+  defp load_token(%Token{} = token) do
+    if persistence = token_persistence() do
+      persistence.load(token)
+    else
+      token
     end
   end
 end

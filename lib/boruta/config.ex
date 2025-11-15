@@ -36,6 +36,7 @@ defmodule Boruta.Config do
     },
     token_generator: Boruta.TokenGenerator,
     client_persistence: nil,
+    token_persistence: nil,
     issuer: "boruta"
   ```
   > Note: To use the did resolver and registrar services, you must provide a compliant server. Here the default is set to the [Godiddy](https://godiddy.com/) server which require an API key to perform the requests.
@@ -74,6 +75,7 @@ defmodule Boruta.Config do
             },
             token_generator: Boruta.TokenGenerator,
             client_persistence: nil,
+            token_persistence: nil,
             issuer: "boruta"
 
   @spec repo() :: module()
@@ -245,6 +247,12 @@ defmodule Boruta.Config do
   @doc false
   def client_persistence do
     Keyword.fetch!(oauth_config(), :client_persistence)
+  end
+
+  @spec token_persistence() :: module() | nil
+  @doc false
+  def token_persistence do
+    Keyword.fetch!(oauth_config(), :token_persistence)
   end
 
   @spec issuer() :: String.t()

@@ -2,7 +2,7 @@ defmodule Boruta.Ecto.PreauthorizedCodes do
   @moduledoc false
   @behaviour Boruta.Openid.PreauthorizedCodes
 
-  import Boruta.Config, only: [repo: 0]
+  import Boruta.Config, only: [repo: 0, token_persistence: 0]
   import Boruta.Ecto.OauthMapper, only: [to_oauth_schema: 1]
 
   alias Boruta.Ecto.Errors
@@ -44,7 +44,7 @@ defmodule Boruta.Ecto.PreauthorizedCodes do
       ])
 
     with {:ok, token} <- repo().insert(changeset),
-         {:ok, token} <- TokenStore.put(to_oauth_schema(token)) do
+         {:ok, token} <- TokenStore.put(to_oauth_schema(load_token(token))) do
       {:ok, token}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -56,4 +56,12 @@ defmodule Boruta.Ecto.PreauthorizedCodes do
 
   defp changeset_method(%Oauth.Client{pkce: false}), do: :preauthorized_code_changeset
   defp changeset_method(%Oauth.Client{pkce: true}), do: :pkce_preauthorized_code_changeset
+
+  defp load_token(%Token{} = token) do
+    if persistence = token_persistence() do
+      persistence.load(token)
+    else
+      token
+    end
+  end
 end

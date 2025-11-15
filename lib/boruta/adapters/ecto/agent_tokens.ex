@@ -2,7 +2,7 @@ defmodule Boruta.Ecto.AgentTokens do
   @moduledoc false
   @behaviour Boruta.Oauth.AgentTokens
 
-  import Boruta.Config, only: [repo: 0]
+  import Boruta.Config, only: [repo: 0, token_persistence: 0]
   import Boruta.Ecto.OauthMapper, only: [to_oauth_schema: 1]
   import Ecto.Query, only: [from: 2]
 
@@ -23,25 +23,29 @@ defmodule Boruta.Ecto.AgentTokens do
   defp get_by(:from_cache, attrs), do: TokenStore.get(attrs)
 
   defp get_by(:from_database, value: value) do
+    value = dump_token_value(value, :agent_token)
+
     with %Token{} = token <-
            repo().one(
              from t in Token,
                left_join: c in assoc(t, :client),
                where: t.type == "agent_token" and t.value == ^value
            ),
-         {:ok, token} <- token |> to_oauth_schema() |> TokenStore.put() do
+         {:ok, token} <- token |> load_token() |> to_oauth_schema() |> TokenStore.put() do
       token
     end
   end
 
   defp get_by(:from_database, refresh_token: refresh_token) do
+    refresh_token = dump_token_value(refresh_token, :refresh_token)
+
     with %Token{} = token <-
            repo().one(
              from t in Token,
                left_join: c in assoc(t, :client),
                where: t.type == "agent_token" and t.refresh_token == ^refresh_token
            ),
-         {:ok, token} <- token |> to_oauth_schema() |> TokenStore.put() do
+         {:ok, token} <- token |> load_token() |> to_oauth_schema() |> TokenStore.put() do
       token
     end
   end
@@ -86,7 +90,7 @@ defmodule Boruta.Ecto.AgentTokens do
       )
 
     with {:ok, token} <- repo().insert(changeset),
-         {:ok, token} <- token |> to_oauth_schema() |> TokenStore.put() do
+         {:ok, token} <- token |> load_token() |> to_oauth_schema() |> TokenStore.put() do
       {:ok, token}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -101,12 +105,14 @@ defmodule Boruta.Ecto.AgentTokens do
 
   @impl Boruta.Oauth.AgentTokens
   def revoke(%Oauth.Token{client: client, value: value}) do
+    value = dump_token_value(value, :agent_token)
+
     with %Token{} = token <- repo().get_by(Token, client_id: client.id, value: value),
          {:ok, token} <-
            token
            |> Token.revoke_changeset()
            |> repo().update() do
-      TokenStore.invalidate(to_oauth_schema(token))
+      TokenStore.invalidate(to_oauth_schema(load_token(token)))
     else
       nil -> {:error, "Token not found."}
       error -> error
@@ -115,12 +121,14 @@ defmodule Boruta.Ecto.AgentTokens do
 
   @impl Boruta.Oauth.AgentTokens
   def revoke_refresh_token(%Oauth.Token{client: client, value: value}) do
+    value = dump_token_value(value, :agent_token)
+
     with %Token{} = token <- repo().get_by(Token, client_id: client.id, value: value),
          {:ok, token} <-
            token
            |> Token.revoke_refresh_token_changeset()
            |> repo().update() do
-      TokenStore.invalidate(to_oauth_schema(token))
+      TokenStore.invalidate(to_oauth_schema(load_token(token)))
     else
       nil -> {:error, "Token not found."}
       error -> error
@@ -130,5 +138,21 @@ defmodule Boruta.Ecto.AgentTokens do
   @impl Boruta.Oauth.AgentTokens
   def claims_from_agent_token(%Oauth.Token{bind_data: bind_data}) do
     {:ok, bind_data}
+  end
+
+  defp dump_token_value(value, type) when is_binary(value) do
+    if persistence = token_persistence() do
+      persistence.dump(value, type)
+    else
+      value
+    end
+  end
+
+  defp load_token(%Token{} = token) do
+    if persistence = token_persistence() do
+      persistence.load(token)
+    else
+      token
+    end
   end
 end
