@@ -4,7 +4,7 @@ defmodule Boruta.Ecto.Clients do
   @behaviour Boruta.Oauth.Clients
   @behaviour Boruta.Openid.Clients
 
-  import Boruta.Config, only: [repo: 0, issuer: 0]
+  import Boruta.Config, only: [repo: 0, client_persistence: 0, issuer: 0]
   import Boruta.Ecto.OauthMapper, only: [to_oauth_schema: 1]
   import Ecto.Query
 
@@ -25,7 +25,7 @@ defmodule Boruta.Ecto.Clients do
   defp get_client(:from_database, id) do
     with {:ok, id} <- Ecto.UUID.cast(id),
          %Client{} = client <- repo().get_by(Client, id: id),
-         {:ok, client} <- client |> to_oauth_schema() |> ClientStore.put() do
+         {:ok, client} <- client |> load_client() |> to_oauth_schema() |> ClientStore.put() do
       client
     else
       _ -> nil
@@ -51,8 +51,10 @@ defmodule Boruta.Ecto.Clients do
   defp public!(:from_database) do
     issuer = issuer()
 
-    with %Client{} = client <- repo().one(from c in Client, where: c.public_client_id == ^issuer, limit: 1),
-         {:ok, client} <- client |> to_oauth_schema() |> ClientStore.put_public() do
+    with %Client{} = client <-
+           repo().one(from c in Client, where: c.public_client_id == ^issuer, limit: 1),
+         {:ok, client} <-
+           client |> load_client() |> to_oauth_schema() |> ClientStore.put_public() do
       client
     end
   end
@@ -87,14 +89,15 @@ defmodule Boruta.Ecto.Clients do
            %Client{}
            |> Client.create_changeset(registration_params)
            |> repo().insert() do
-      client |> to_oauth_schema() |> ClientStore.put()
+      client |> load_client() |> to_oauth_schema() |> ClientStore.put()
     end
   end
 
   @impl Boruta.Openid.Clients
   def refresh_jwk_from_jwks_uri(client_id) do
-    with %Client{jwks_uri: "" <> jwks_uri} = client <-
-           repo().get_by(Client, id: client_id),
+    with %Client{} = client <- repo().get_by(Client, id: client_id),
+         %Client{} = client = load_client(client),
+         %Client{jwks_uri: "" <> jwks_uri} <- client,
          %URI{scheme: "" <> _scheme} <- URI.parse(jwks_uri),
          {:ok, %Finch.Response{body: jwks, status: 200}} <-
            Finch.build(:get, jwks_uri) |> Finch.request(OpenIDHttpClient),
@@ -127,5 +130,13 @@ defmodule Boruta.Ecto.Clients do
     {_type, jwk} = public_key |> :jose_jwk.from_pem() |> :jose_jwk.to_map()
 
     Map.put(jwk, "kid", Oauth.Client.Crypto.kid_from_private_key(private_key))
+  end
+
+  defp load_client(%Client{} = client) do
+    if persistence = client_persistence() do
+      persistence.load(client)
+    else
+      client
+    end
   end
 end

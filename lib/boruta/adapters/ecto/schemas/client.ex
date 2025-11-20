@@ -16,7 +16,8 @@ defmodule Boruta.Ecto.Client do
       authorization_code_max_ttl: 0,
       authorization_request_max_ttl: 0,
       id_token_max_ttl: 0,
-      refresh_token_max_ttl: 0
+      refresh_token_max_ttl: 0,
+      client_persistence: 0
     ]
 
   alias Boruta.Did
@@ -208,7 +209,7 @@ defmodule Boruta.Ecto.Client do
       :metadata,
       :response_mode,
       :signatures_adapter,
-      :key_pair_type,
+      :key_pair_type
     ])
     |> validate_required([:redirect_uris, :key_pair_type])
     |> unique_constraint(:id, name: :clients_pkey)
@@ -238,6 +239,7 @@ defmodule Boruta.Ecto.Client do
     |> generate_key_pair()
     |> put_secret()
     |> validate_required(:secret)
+    |> dump_changeset()
   end
 
   def update_changeset(client, attrs) do
@@ -308,6 +310,7 @@ defmodule Boruta.Ecto.Client do
     |> validate_signatures_adapter()
     |> validate_key_pair_type()
     |> translate_jwk()
+    |> dump_changeset()
   end
 
   def secret_changeset(client, secret \\ nil) do
@@ -315,17 +318,20 @@ defmodule Boruta.Ecto.Client do
     |> cast(%{secret: secret}, [:secret])
     |> put_secret()
     |> validate_required(:secret)
+    |> dump_changeset()
   end
 
   def did_changeset(client) do
     change(client)
     |> put_did()
+    |> dump_changeset()
   end
 
   def key_pair_changeset(client, attrs \\ %{}) do
     client
     |> cast(attrs, [:public_key, :private_key])
     |> generate_key_pair()
+    |> dump_changeset()
   end
 
   defp change_access_token_ttl(changeset) do
@@ -397,9 +403,15 @@ defmodule Boruta.Ecto.Client do
 
     case key_pair_type do
       %{"type" => "universal"} ->
-        validate_inclusion(changeset, :signatures_adapter, [Atom.to_string(Boruta.Universal.Signatures)])
+        validate_inclusion(changeset, :signatures_adapter, [
+          Atom.to_string(Boruta.Universal.Signatures)
+        ])
+
       %{"type" => type} when type in ["ec", "rsa"] ->
-        validate_inclusion(changeset, :signatures_adapter, [Atom.to_string(Boruta.Internal.Signatures)])
+        validate_inclusion(changeset, :signatures_adapter, [
+          Atom.to_string(Boruta.Internal.Signatures)
+        ])
+
       _ ->
         add_error(changeset, :signatures_adapter, "unknown key pair type")
     end
@@ -581,6 +593,14 @@ defmodule Boruta.Ecto.Client do
           {:error, error} ->
             add_error(changeset, :did, error)
         end
+    end
+  end
+
+  defp dump_changeset(%Ecto.Changeset{} = changeset) do
+    if persistence = client_persistence() do
+      persistence.dump(changeset)
+    else
+      changeset
     end
   end
 end
