@@ -9,7 +9,8 @@ defmodule Boruta.Ecto.Token do
 
   import Boruta.Config,
     only: [
-      token_generator: 0
+      token_generator: 0,
+      token_persistence: 0
     ]
 
   alias Boruta.Ecto.Client
@@ -116,6 +117,7 @@ defmodule Boruta.Ecto.Token do
     |> put_value()
     |> put_c_nonce()
     |> put_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -141,6 +143,7 @@ defmodule Boruta.Ecto.Token do
     |> put_c_nonce()
     |> put_refresh_token()
     |> put_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -166,6 +169,7 @@ defmodule Boruta.Ecto.Token do
     |> put_value()
     |> put_c_nonce()
     |> put_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -192,6 +196,7 @@ defmodule Boruta.Ecto.Token do
     |> put_c_nonce()
     |> put_refresh_token()
     |> put_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -214,6 +219,7 @@ defmodule Boruta.Ecto.Token do
     |> put_value()
     |> put_tx_code()
     |> put_code_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -245,6 +251,7 @@ defmodule Boruta.Ecto.Token do
     |> put_code_expires_at()
     |> put_code_challenge_method()
     |> encrypt_code_challenge()
+    |> dump_changeset()
   end
 
   @doc false
@@ -267,6 +274,7 @@ defmodule Boruta.Ecto.Token do
     |> put_change(:type, "code")
     |> put_value()
     |> put_code_expires_at()
+    |> dump_changeset()
   end
 
   @doc false
@@ -300,6 +308,7 @@ defmodule Boruta.Ecto.Token do
     |> put_code_expires_at()
     |> put_code_challenge_method()
     |> encrypt_code_challenge()
+    |> dump_changeset()
   end
 
   @doc false
@@ -400,6 +409,14 @@ defmodule Boruta.Ecto.Token do
 
       _ ->
         changeset
+    end
+  end
+
+  defp dump_changeset(%Ecto.Changeset{} = changeset) do
+    if persistence = token_persistence() do
+      persistence.dump(changeset)
+    else
+      changeset
     end
   end
 end
